@@ -42,6 +42,9 @@ async function handleScan(req: IncomingMessage, res: ServerResponse): Promise<vo
       limit: payload.limit,
       redirectSamples: payload.redirectSamples,
       sitemapAttempts: payload.sitemapAttempts,
+      // Read from the server's own environment, never from the request body —
+      // this is a webhook URL, not something a client should get to set.
+      discordWebhook: process.env.SITEDOCTOR_DISCORD_WEBHOOK,
     });
     sendJson(res, 200, JSON.parse(toJson(result)));
   } catch (err) {

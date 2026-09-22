@@ -5,8 +5,13 @@ import { extractJsonLd, checkStructuredData, type PageJsonLd } from "./checks/st
 import { checkRedirects } from "./checks/redirects.js";
 import { checkSitemapReliability } from "./checks/sitemap-reliability.js";
 import { checkFavicon } from "./checks/favicon.js";
+import { extractMeta, checkMetaTags, type PageMeta } from "./checks/meta-tags.js";
+import { checkImages } from "./checks/images.js";
+import { checkRobotsMeta } from "./checks/robots-meta.js";
+import { extractInternalLinks, checkBrokenLinks, type PageLinks } from "./checks/links.js";
 import { computeHealthScore } from "./scoring.js";
 import { recordAndGetHistory, type HistoryEntry } from "./history.js";
+import { fingerprint, diffCritical, notifyIfChanged } from "./notify.js";
 import type { Finding } from "./types.js";
 
 export interface AuditOptions {
@@ -15,6 +20,8 @@ export interface AuditOptions {
   sitemapAttempts?: number;
   /** Called with progress lines as the audit runs (e.g. to stream to a UI). */
   onProgress?: (message: string) => void;
+  /** If set, posts to Discord on new critical findings or full recovery — never on every run. */
+  discordWebhook?: string;
 }
 
 export interface AuditResult {
@@ -50,10 +57,15 @@ export async function runAudit(target: string, options: AuditOptions = {}): Prom
 
   const canonicalInputs: PageCanonical[] = [];
   const jsonLdInputs: PageJsonLd[] = [];
+  const metaInputs: PageMeta[] = [];
+  const linkInputs: PageLinks[] = [];
+  const perPageFindings: Finding[] = [];
+  const fetchedUrls = new Set<string>();
   let homepageHtml: string | null = null;
 
   for (const [i, res] of fetched.entries()) {
     const url = pages[i];
+    fetchedUrls.add(res.finalUrl);
 
     if (res.error || res.status >= 400) {
       findings.push({
@@ -79,13 +91,19 @@ export async function runAudit(target: string, options: AuditOptions = {}): Prom
 
     canonicalInputs.push(extractCanonical(res.finalUrl, res.body));
     jsonLdInputs.push(extractJsonLd(res.finalUrl, res.body));
+    metaInputs.push(extractMeta(res.finalUrl, res.body));
+    linkInputs.push(extractInternalLinks(res.finalUrl, res.body, origin));
+    perPageFindings.push(...checkImages(res.finalUrl, res.body));
+    perPageFindings.push(...checkRobotsMeta(res.finalUrl, res.body, res));
 
     if (url.replace(/\/$/, "") === origin.replace(/\/$/, "") || url === `${origin}/`) {
       homepageHtml = res.body;
     }
   }
 
-  progress("Running checks: canonicals, structured data, redirects, sitemap reliability, favicon...");
+  progress(
+    "Running checks: canonicals, structured data, redirects, sitemap reliability, favicon, meta tags, links..."
+  );
 
   const samplePaths = Array.from(
     new Set([
@@ -102,35 +120,58 @@ export async function runAudit(target: string, options: AuditOptions = {}): Prom
 
   const sitemapUrl = sitemapsFound[0] ?? `${origin}/sitemap.xml`;
 
-  const [canonicalFindings, structuredDataFindings, redirectFindings, sitemapFindings, faviconFindings] =
-    await Promise.all([
-      checkCanonicals(canonicalInputs),
-      Promise.resolve(checkStructuredData(jsonLdInputs)),
-      checkRedirects(origin, samplePaths),
-      checkSitemapReliability(sitemapUrl, sitemapAttempts),
-      checkFavicon(origin, homepageHtml),
-    ]);
+  const [
+    canonicalFindings,
+    structuredDataFindings,
+    redirectFindings,
+    sitemapFindings,
+    faviconFindings,
+    metaFindings,
+    linkFindings,
+  ] = await Promise.all([
+    checkCanonicals(canonicalInputs),
+    Promise.resolve(checkStructuredData(jsonLdInputs)),
+    checkRedirects(origin, samplePaths),
+    checkSitemapReliability(sitemapUrl, sitemapAttempts),
+    checkFavicon(origin, homepageHtml),
+    Promise.resolve(checkMetaTags(metaInputs)),
+    checkBrokenLinks(linkInputs, fetchedUrls),
+  ]);
 
   findings.push(
     ...canonicalFindings,
     ...structuredDataFindings,
     ...redirectFindings,
     ...sitemapFindings,
-    ...faviconFindings
+    ...faviconFindings,
+    ...metaFindings,
+    ...linkFindings,
+    ...perPageFindings
   );
 
   const healthScore = computeHealthScore(findings);
+  const criticalFindings = findings.filter((f) => f.severity === "critical");
   const summary = {
-    critical: findings.filter((f) => f.severity === "critical").length,
+    critical: criticalFindings.length,
     warning: findings.filter((f) => f.severity === "warning").length,
     info: findings.filter((f) => f.severity === "info").length,
   };
+
   const history = await recordAndGetHistory(origin, {
     timestamp: new Date().toISOString(),
     healthScore,
     pagesScanned: canonicalInputs.length,
     summary,
+    criticalFingerprints: criticalFindings.map(fingerprint),
   });
+
+  if (options.discordWebhook) {
+    const previous = history.length >= 2 ? history[history.length - 2] : null;
+    const diff = diffCritical(criticalFindings, previous?.criticalFingerprints ?? []);
+    const result = await notifyIfChanged(options.discordWebhook, origin, healthScore, criticalFindings, diff);
+    if (result.error) progress(`Discord notification failed: ${result.error}`);
+    else if (result.posted) progress("Posted a Discord update (state changed).");
+  }
 
   progress("Done.");
 

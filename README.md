@@ -27,6 +27,26 @@ None of those show up on a single pass. That's the point.
   regeneration that intermittently drops entries under load; this can.
 - **Favicon validity** — reads the actual bytes and compares them to what
   the extension claims, instead of trusting the filename.
+- **Titles & meta descriptions** — missing, too long/short, or identical
+  across many pages (the same inheritance-bleed bug as canonicals, just for
+  the tags that actually show up as your search result snippet).
+- **Image alt text** — `<img>` tags with no `alt` attribute at all (not the
+  same as an intentionally empty `alt=""` on a decorative image).
+- **Accidental noindex** — a page listed in the sitemap that's also marked
+  `noindex` via meta tag or `X-Robots-Tag` header, which is usually one of
+  the two being set by mistake.
+- **Broken internal links** — links an actual visitor would click, crawled
+  from the pages themselves rather than just the sitemap (capped at 60 new
+  links per scan to keep runtime reasonable).
+
+## Alerting
+
+Set `SITEDOCTOR_DISCORD_WEBHOOK` in the environment and pass `--notify`
+(CLI) or just run `serve` (the server always notifies if the env var is
+set) to post to Discord — but only on a **state change**: new critical
+findings appearing, or the site going fully clean after having had
+critical findings. It won't repost the same standing issues every run;
+that's how alert channels turn into noise nobody reads.
 
 ## Usage
 

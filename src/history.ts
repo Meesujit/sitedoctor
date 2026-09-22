@@ -9,6 +9,9 @@ export interface HistoryEntry {
   healthScore: number;
   pagesScanned: number;
   summary: { critical: number; warning: number; info: number };
+  /** Stable identifiers for critical findings, so the next run can diff
+   *  "what's new" / "what's resolved" without storing every full finding. */
+  criticalFingerprints: string[];
 }
 
 function fileFor(origin: string): string {

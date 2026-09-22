@@ -10,6 +10,7 @@ interface Args {
   sitemapAttempts: number;
   json: boolean;
   out: string | null;
+  notify: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -33,8 +34,11 @@ function parseArgs(argv: string[]): Args {
   }
 
   if (positional.length === 0) {
-    console.error("Usage: sitedoctor <domain> [--limit 40] [--json] [--out report.json]");
+    console.error("Usage: sitedoctor <domain> [--limit 40] [--json] [--out report.json] [--notify]");
     console.error("       sitedoctor serve [--port 4321]   (starts the web UI)");
+    console.error("");
+    console.error("--notify posts to Discord on new critical findings or full recovery.");
+    console.error("Requires SITEDOCTOR_DISCORD_WEBHOOK in the environment.");
     process.exit(1);
   }
 
@@ -45,6 +49,7 @@ function parseArgs(argv: string[]): Args {
     sitemapAttempts: Number(flags["sitemap-attempts"] ?? 5),
     json: Boolean(flags.json),
     out: typeof flags.out === "string" ? flags.out : null,
+    notify: Boolean(flags.notify),
   };
 }
 
@@ -61,11 +66,16 @@ async function main(): Promise<void> {
 
   const args = parseArgs(argv);
 
+  if (args.notify && !process.env.SITEDOCTOR_DISCORD_WEBHOOK) {
+    console.error("--notify was passed but SITEDOCTOR_DISCORD_WEBHOOK isn't set in the environment. Skipping notification.");
+  }
+
   const result = await runAudit(args.target, {
     limit: args.limit,
     redirectSamples: args.redirectSamples,
     sitemapAttempts: args.sitemapAttempts,
     onProgress: (msg) => console.error(msg),
+    discordWebhook: args.notify ? process.env.SITEDOCTOR_DISCORD_WEBHOOK : undefined,
   });
 
   if (args.json || args.out) {
