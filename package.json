@@ -1,0 +1,27 @@
+{
+  "name": "sitedoctor",
+  "version": "0.1.0",
+  "description": "Catches the site-health bugs generic SEO crawlers miss: orphaned canonicals, structured-data bleed across pages, flaky sitemaps, and broken favicons hiding behind the right file extension.",
+  "type": "module",
+  "bin": {
+    "sitedoctor": "./dist/cli.js"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/cli.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
