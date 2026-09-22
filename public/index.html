@@ -22,8 +22,12 @@
     --accent-hover: #4338ca;
     --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   }
+  /* Dark values apply when the OS prefers dark (and the user hasn't
+     explicitly picked light), OR when the user has explicitly picked
+     dark regardless of OS preference. The toggle button below sets
+     data-theme and remembers it in localStorage. */
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --bg: #0b0b0d;
       --surface: #17171a;
       --border: #2a2a2e;
@@ -39,6 +43,22 @@
       --accent: #818cf8;
       --accent-hover: #a5b4fc;
     }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b0b0d;
+    --surface: #17171a;
+    --border: #2a2a2e;
+    --text: #f4f4f5;
+    --text-muted: #a1a1aa;
+    --text-faint: #71717a;
+    --critical: #f87171;
+    --critical-bg: #2a1414;
+    --warning: #fbbf24;
+    --warning-bg: #2a2211;
+    --info: #60a5fa;
+    --info-bg: #12213a;
+    --accent: #818cf8;
+    --accent-hover: #a5b4fc;
   }
   * { box-sizing: border-box; }
   body {
@@ -62,8 +82,27 @@
   .tagline {
     color: var(--text-muted);
     font-size: 14px;
-    margin: 0 0 28px;
+    margin: 0;
   }
+  .header-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  #theme-toggle {
+    flex-shrink: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  #theme-toggle:hover { background: var(--bg); }
   form {
     display: flex;
     gap: 8px;
@@ -275,11 +314,25 @@
   }
   #error.show { display: block; }
 </style>
+<script>
+  // Applied before paint so there's no flash of the wrong theme on load.
+  try {
+    var saved = localStorage.getItem("sitedoctor-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  } catch (e) {}
+</script>
 </head>
 <body>
 <main>
-  <h1>sitedoctor</h1>
-  <p class="tagline">Catches the site-health bugs a single-pass SEO crawler misses.</p>
+  <div class="header-row">
+    <div>
+      <h1>sitedoctor</h1>
+      <p class="tagline">Catches the site-health bugs a single-pass SEO crawler misses.</p>
+    </div>
+    <button id="theme-toggle" type="button" title="Toggle light/dark" aria-label="Toggle light/dark theme">🌙</button>
+  </div>
 
   <form id="scan-form">
     <input type="text" id="domain" placeholder="example.com" autocomplete="off" autofocus />
@@ -342,6 +395,31 @@
 
   const SEVERITY_ORDER = ["critical", "warning", "info"];
   let lastData = null;
+
+  const themeToggle = document.getElementById("theme-toggle");
+  const THEME_KEY = "sitedoctor-theme";
+
+  function effectiveTheme() {
+    const explicit = document.documentElement.getAttribute("data-theme");
+    if (explicit) return explicit;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  function syncThemeIcon() {
+    // Icon shows what clicking it switches TO.
+    themeToggle.textContent = effectiveTheme() === "dark" ? "☀️" : "🌙";
+  }
+
+  themeToggle.addEventListener("click", () => {
+    const next = effectiveTheme() === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try {
+      localStorage.setItem(THEME_KEY, next);
+    } catch (e) {}
+    syncThemeIcon();
+  });
+
+  syncThemeIcon();
 
   function esc(s) {
     return String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -453,18 +531,16 @@
     const groupsHtml = data.groups
       .map(
         (g) => `
-        <section style="margin-bottom:28px;">
-          <h2 style="font-size:16px;margin:0 0 6px;">${esc(g.title)} (${g.findings.length})</h2>
-          <p style="color:#6b7280;font-size:14px;margin:0 0 12px;">${esc(g.whyItMatters)}</p>
+        <section class="grp">
+          <h2>${esc(g.title)} (${g.findings.length})</h2>
+          <p class="why">${esc(g.whyItMatters)}</p>
           ${g.findings
             .map(
               (f) => `
-            <div style="padding:8px 0;border-bottom:1px solid #e4e4e7;">
-              <strong style="text-transform:uppercase;font-size:11px;color:${
-                f.severity === "critical" ? "#dc2626" : f.severity === "warning" ? "#b45309" : "#2563eb"
-              };">${f.severity}</strong>
-              <div style="font-size:14px;margin-top:2px;">${esc(f.message)}</div>
-              ${f.url ? `<div style="font-family:monospace;font-size:12px;color:#9ca3af;margin-top:2px;">${esc(f.url)}</div>` : ""}
+            <div class="f">
+              <strong class="sev ${f.severity}">${f.severity}</strong>
+              <div class="msg">${esc(f.message)}</div>
+              ${f.url ? `<div class="u">${esc(f.url)}</div>` : ""}
             </div>`
             )
             .join("")}
@@ -472,14 +548,89 @@
       )
       .join("");
 
-    return `<!doctype html><html><head><meta charset="utf-8"><title>Site health report — ${esc(data.target)}</title></head>
-      <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#18181b;">
-        <h1 style="font-size:22px;margin-bottom:2px;">Site health report</h1>
-        <p style="color:#6b7280;font-size:14px;margin-top:0;">${esc(data.target)} — generated ${new Date(data.generatedAt).toLocaleString()}</p>
-        <div style="font-size:44px;font-weight:800;margin:20px 0 2px;">${data.healthScore}<span style="font-size:16px;color:#9ca3af;">/100</span></div>
-        <div style="font-size:14px;color:#6b7280;margin-bottom:24px;">${esc(data.healthScoreLabel)} — ${data.summary.critical} critical, ${data.summary.warning} warning, ${data.summary.info} info</div>
-        ${data.findings.length === 0 ? "<p>No issues found.</p>" : groupsHtml}
-      </body></html>`;
+    // Self-contained: a real dark/light toggle for a file that gets opened
+    // standalone, outside the app — no dependency on the app's own state.
+    return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Site health report — ${esc(data.target)}</title>
+<style>
+  :root {
+    --bg: #f7f7f8; --surface: #ffffff; --border: #e4e4e7;
+    --text: #18181b; --text-muted: #6b7280; --text-faint: #9ca3af;
+    --critical: #dc2626; --warning: #b45309; --info: #2563eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b0b0d; --surface: #17171a; --border: #2a2a2e;
+      --text: #f4f4f5; --text-muted: #a1a1aa; --text-faint: #71717a;
+      --critical: #f87171; --warning: #fbbf24; --info: #60a5fa;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b0b0d; --surface: #17171a; --border: #2a2a2e;
+    --text: #f4f4f5; --text-muted: #a1a1aa; --text-faint: #71717a;
+    --critical: #f87171; --warning: #fbbf24; --info: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px 60px; color: var(--text); background: var(--bg); }
+  .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  h1 { font-size: 22px; margin: 0 0 2px; }
+  .meta { color: var(--text-muted); font-size: 14px; margin-top: 0; }
+  #toggle { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 7px 10px; cursor: pointer; font-size: 14px; }
+  .score { font-size: 44px; font-weight: 800; margin: 20px 0 2px; }
+  .score span { font-size: 16px; color: var(--text-faint); font-weight: 400; }
+  .summary-line { font-size: 14px; color: var(--text-muted); margin-bottom: 24px; }
+  .grp { margin-bottom: 28px; }
+  .grp h2 { font-size: 16px; margin: 0 0 6px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  .why { color: var(--text-muted); font-size: 14px; margin: 0 0 12px; }
+  .f { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .sev { text-transform: uppercase; font-size: 11px; }
+  .sev.critical { color: var(--critical); }
+  .sev.warning { color: var(--warning); }
+  .sev.info { color: var(--info); }
+  .msg { font-size: 14px; margin-top: 2px; }
+  .u { font-family: monospace; font-size: 12px; color: var(--text-faint); margin-top: 2px; word-break: break-all; }
+  @media print { #toggle { display: none; } }
+</style>
+<script>
+  try {
+    var saved = localStorage.getItem("sitedoctor-theme");
+    if (saved === "light" || saved === "dark") document.documentElement.setAttribute("data-theme", saved);
+  } catch (e) {}
+<\/script>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <h1>Site health report</h1>
+      <p class="meta">${esc(data.target)} — generated ${new Date(data.generatedAt).toLocaleString()}</p>
+    </div>
+    <button id="toggle" type="button" aria-label="Toggle light/dark">🌙</button>
+  </div>
+  <div class="score">${data.healthScore}<span>/100</span></div>
+  <div class="summary-line">${esc(data.healthScoreLabel)} — ${data.summary.critical} critical, ${data.summary.warning} warning, ${data.summary.info} info</div>
+  ${data.findings.length === 0 ? "<p>No issues found.</p>" : groupsHtml}
+  <script>
+    var btn = document.getElementById("toggle");
+    function effective() {
+      var explicit = document.documentElement.getAttribute("data-theme");
+      if (explicit) return explicit;
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    function sync() { btn.textContent = effective() === "dark" ? "☀️" : "🌙"; }
+    btn.addEventListener("click", function () {
+      var next = effective() === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("sitedoctor-theme", next); } catch (e) {}
+      sync();
+    });
+    sync();
+  <\/script>
+</body>
+</html>`;
   }
 
   downloadBtn.addEventListener("click", () => {
