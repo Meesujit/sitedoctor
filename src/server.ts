@@ -43,7 +43,7 @@ async function handleScan(req: IncomingMessage, res: ServerResponse): Promise<vo
       redirectSamples: payload.redirectSamples,
       sitemapAttempts: payload.sitemapAttempts,
     });
-    sendJson(res, 200, JSON.parse(toJson(result.origin, result.findings, result.warnings)));
+    sendJson(res, 200, JSON.parse(toJson(result)));
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }

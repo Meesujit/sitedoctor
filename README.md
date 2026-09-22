@@ -44,10 +44,18 @@ npm run serve            # http://localhost:4321
 npm run serve -- --port 5000
 ```
 
-A single local page: type a domain, hit Scan, see the same findings the CLI
-reports laid out with severity badges instead of terminal colors. No
-external requests except the ones the scan itself makes to the target site —
-no analytics, no CDN, nothing phoned home.
+A single local page: type a domain, hit Scan, see a health score (0-100,
+trending against past scans via a sparkline), plain-English "why this
+matters" text per issue category, and the same technical findings the CLI
+reports underneath — collapsed by default, expandable for detail. A
+"Download report" button exports a clean standalone HTML file (open
+directly, or print to PDF) for sharing without needing anyone else to run
+the tool.
+
+Each domain's scan history is kept locally in `data/history/` (gitignored)
+so the score can trend over time. No external requests except the ones the
+scan itself makes to the target site — no analytics, no CDN, nothing phoned
+home.
 
 ### CLI flags
 

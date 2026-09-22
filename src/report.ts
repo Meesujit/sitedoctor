@@ -1,5 +1,8 @@
 import pc from "picocolors";
 import type { Finding, Severity } from "./types.js";
+import type { AuditResult } from "./audit.js";
+import { explainCheck } from "./explanations.js";
+import { scoreLabel } from "./scoring.js";
 
 const SEVERITY_ORDER: Severity[] = ["critical", "warning", "info"];
 
@@ -15,10 +18,18 @@ const SEVERITY_LABEL: Record<Severity, string> = {
   info: "INFO",
 };
 
-export function printReport(target: string, findings: Finding[], warnings: string[]): void {
+export function printReport(result: AuditResult): void {
+  const { origin: target, findings, warnings, healthScore, history } = result;
   console.log();
   console.log(pc.bold(`sitedoctor report — ${target}`));
   console.log(pc.dim(new Date().toISOString()));
+
+  const prev = history.length >= 2 ? history[history.length - 2] : null;
+  const delta = prev ? healthScore - prev.healthScore : null;
+  const deltaStr =
+    delta === null ? "(first scan)" : delta === 0 ? "(no change)" : delta > 0 ? `(+${delta})` : `(${delta})`;
+  const scoreColor = healthScore >= 90 ? pc.green : healthScore >= 70 ? pc.yellow : pc.red;
+  console.log(scoreColor(pc.bold(`Health score: ${healthScore}/100 — ${scoreLabel(healthScore)} ${deltaStr}`)));
   console.log();
 
   for (const w of warnings) {
@@ -40,7 +51,9 @@ export function printReport(target: string, findings: Finding[], warnings: strin
   }
 
   for (const [check, checkFindings] of byCheck) {
-    console.log(pc.bold(pc.underline(check)));
+    const { title, whyItMatters } = explainCheck(check);
+    console.log(pc.bold(pc.underline(title)));
+    if (whyItMatters) console.log(pc.dim(`  ${whyItMatters}`));
     const sorted = [...checkFindings].sort(
       (a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity)
     );
@@ -66,13 +79,35 @@ export function printReport(target: string, findings: Finding[], warnings: strin
   console.log();
 }
 
-export function toJson(target: string, findings: Finding[], warnings: string[]): string {
+export function toJson(result: AuditResult): string {
+  const { origin: target, findings, warnings, healthScore, history, pagesScanned, sitemapsFound } = result;
+  const byCheck = new Map<string, Finding[]>();
+  for (const f of findings) {
+    const list = byCheck.get(f.check) ?? [];
+    list.push(f);
+    byCheck.set(f.check, list);
+  }
+  const groups = Array.from(byCheck.entries()).map(([check, checkFindings]) => ({
+    check,
+    ...explainCheck(check),
+    findings: checkFindings,
+  }));
+
+  const prev = history.length >= 2 ? history[history.length - 2] : null;
+
   return JSON.stringify(
     {
       target,
       generatedAt: new Date().toISOString(),
       warnings,
       findings,
+      groups,
+      healthScore,
+      healthScoreLabel: scoreLabel(healthScore),
+      healthScoreDelta: prev ? healthScore - prev.healthScore : null,
+      history,
+      pagesScanned,
+      sitemapsFound,
       summary: {
         critical: findings.filter((f) => f.severity === "critical").length,
         warning: findings.filter((f) => f.severity === "warning").length,

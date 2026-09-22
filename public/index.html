@@ -135,10 +135,41 @@
     min-height: 18px;
   }
 
+  #score-card {
+    display: none;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    padding: 18px 20px;
+    margin: 24px 0 14px;
+    align-items: center;
+    gap: 18px;
+  }
+  #score-card.show { display: flex; }
+  #score-num { font-size: 40px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+  #score-num.healthy { color: #16a34a; }
+  #score-num.attention { color: var(--warning); }
+  #score-num.risk, #score-num.critical-score { color: var(--critical); }
+  #score-meta { flex: 1; min-width: 0; }
+  #score-label { font-size: 14px; font-weight: 600; }
+  #score-delta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  #score-delta.up { color: #16a34a; }
+  #score-delta.down { color: var(--critical); }
+  #sparkline { flex-shrink: 0; }
+  #download-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-weight: 500;
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+  #download-btn:hover { background: var(--bg); }
+
   #summary {
     display: none;
     gap: 10px;
-    margin: 24px 0;
+    margin: 0 0 24px;
   }
   #summary.show { display: flex; }
   .stat {
@@ -153,6 +184,22 @@
   .stat.critical .n { color: var(--critical); }
   .stat.warning .n { color: var(--warning); }
   .stat.info .n { color: var(--info); }
+
+  .why-it-matters {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: -2px 0 10px;
+    line-height: 1.5;
+  }
+  details.tech {
+    margin-top: 6px;
+  }
+  details.tech summary {
+    font-size: 12px;
+    color: var(--text-faint);
+    cursor: pointer;
+    user-select: none;
+  }
 
   #meta {
     font-size: 12px;
@@ -257,6 +304,16 @@
   <div id="status"></div>
   <div id="error"></div>
 
+  <div id="score-card">
+    <div id="score-num">–</div>
+    <div id="score-meta">
+      <div id="score-label"></div>
+      <div id="score-delta"></div>
+    </div>
+    <div id="sparkline"></div>
+    <button id="download-btn" type="button">Download report</button>
+  </div>
+
   <div id="summary">
     <div class="stat critical"><div class="n" id="n-critical">0</div><div class="label">Critical</div></div>
     <div class="stat warning"><div class="n" id="n-warning">0</div><div class="label">Warning</div></div>
@@ -275,13 +332,16 @@
   const scanBtn = document.getElementById("scan-btn");
   const statusEl = document.getElementById("status");
   const errorEl = document.getElementById("error");
+  const scoreCardEl = document.getElementById("score-card");
   const summaryEl = document.getElementById("summary");
   const metaEl = document.getElementById("meta");
   const notesEl = document.getElementById("notes");
   const emptyEl = document.getElementById("empty");
   const resultsEl = document.getElementById("results");
+  const downloadBtn = document.getElementById("download-btn");
 
   const SEVERITY_ORDER = ["critical", "warning", "info"];
+  let lastData = null;
 
   function esc(s) {
     return String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -289,7 +349,74 @@
     }[c]));
   }
 
+  function scoreClass(score) {
+    if (score >= 90) return "healthy";
+    if (score >= 70) return "attention";
+    if (score >= 40) return "risk";
+    return "critical-score";
+  }
+
+  function sparklineSvg(history) {
+    const scores = history.map((h) => h.healthScore);
+    if (scores.length < 2) return "";
+    const w = 100, h = 32, pad = 3;
+    const min = Math.min(...scores), max = Math.max(...scores);
+    const range = max - min || 1;
+    const pts = scores.map((s, i) => {
+      const x = pad + (i / (scores.length - 1)) * (w - pad * 2);
+      const y = h - pad - ((s - min) / range) * (h - pad * 2);
+      return [x, y];
+    });
+    const path = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+    const last = pts[pts.length - 1];
+    const color = "var(--accent)";
+    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+      <path d="${path}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+      <circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="2.5" fill="${color}" />
+    </svg>`;
+  }
+
+  function findingsHtml(findings) {
+    const sorted = [...findings].sort(
+      (a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity)
+    );
+    return sorted
+      .map(
+        (f) => `
+        <div class="finding">
+          <span class="badge ${f.severity}">${f.severity}</span>
+          <div class="finding-body">
+            <div class="finding-msg">${esc(f.message)}</div>
+            ${f.url ? `<div class="finding-url">${esc(f.url)}</div>` : ""}
+            ${f.detail ? `<div class="finding-detail">${esc(f.detail)}</div>` : ""}
+          </div>
+        </div>`
+      )
+      .join("");
+  }
+
   function render(data) {
+    lastData = data;
+
+    scoreCardEl.classList.add("show");
+    const scoreNumEl = document.getElementById("score-num");
+    scoreNumEl.textContent = data.healthScore;
+    scoreNumEl.className = scoreClass(data.healthScore);
+    document.getElementById("score-label").textContent = `${data.healthScoreLabel} — ${data.pagesScanned} page(s) scanned`;
+    const deltaEl = document.getElementById("score-delta");
+    if (data.healthScoreDelta === null) {
+      deltaEl.textContent = "First scan of this site";
+      deltaEl.className = "";
+    } else if (data.healthScoreDelta === 0) {
+      deltaEl.textContent = "No change since last scan";
+      deltaEl.className = "";
+    } else {
+      const up = data.healthScoreDelta > 0;
+      deltaEl.textContent = `${up ? "+" : ""}${data.healthScoreDelta} since last scan`;
+      deltaEl.className = up ? "up" : "down";
+    }
+    document.getElementById("sparkline").innerHTML = sparklineSvg(data.history || []);
+
     summaryEl.classList.add("show");
     document.getElementById("n-critical").textContent = data.summary.critical;
     document.getElementById("n-warning").textContent = data.summary.warning;
@@ -308,32 +435,65 @@
     }
     emptyEl.classList.remove("show");
 
-    const byCheck = new Map();
-    for (const f of data.findings) {
-      if (!byCheck.has(f.check)) byCheck.set(f.check, []);
-      byCheck.get(f.check).push(f);
-    }
-
-    for (const [check, findings] of byCheck) {
-      findings.sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity));
+    for (const g of data.groups) {
       const group = document.createElement("div");
       group.className = "group";
-      group.innerHTML = `<h2>${esc(check)}</h2>`;
-      for (const f of findings) {
-        const row = document.createElement("div");
-        row.className = "finding";
-        row.innerHTML = `
-          <span class="badge ${f.severity}">${f.severity}</span>
-          <div class="finding-body">
-            <div class="finding-msg">${esc(f.message)}</div>
-            ${f.url ? `<div class="finding-url">${esc(f.url)}</div>` : ""}
-            ${f.detail ? `<div class="finding-detail">${esc(f.detail)}</div>` : ""}
-          </div>`;
-        group.appendChild(row);
-      }
+      group.innerHTML = `
+        <h2>${esc(g.title)}</h2>
+        ${g.whyItMatters ? `<div class="why-it-matters">${esc(g.whyItMatters)}</div>` : ""}
+        <details class="tech">
+          <summary>Technical details (${g.findings.length})</summary>
+          ${findingsHtml(g.findings)}
+        </details>`;
       resultsEl.appendChild(group);
     }
   }
+
+  function buildShareableReport(data) {
+    const groupsHtml = data.groups
+      .map(
+        (g) => `
+        <section style="margin-bottom:28px;">
+          <h2 style="font-size:16px;margin:0 0 6px;">${esc(g.title)} (${g.findings.length})</h2>
+          <p style="color:#6b7280;font-size:14px;margin:0 0 12px;">${esc(g.whyItMatters)}</p>
+          ${g.findings
+            .map(
+              (f) => `
+            <div style="padding:8px 0;border-bottom:1px solid #e4e4e7;">
+              <strong style="text-transform:uppercase;font-size:11px;color:${
+                f.severity === "critical" ? "#dc2626" : f.severity === "warning" ? "#b45309" : "#2563eb"
+              };">${f.severity}</strong>
+              <div style="font-size:14px;margin-top:2px;">${esc(f.message)}</div>
+              ${f.url ? `<div style="font-family:monospace;font-size:12px;color:#9ca3af;margin-top:2px;">${esc(f.url)}</div>` : ""}
+            </div>`
+            )
+            .join("")}
+        </section>`
+      )
+      .join("");
+
+    return `<!doctype html><html><head><meta charset="utf-8"><title>Site health report — ${esc(data.target)}</title></head>
+      <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#18181b;">
+        <h1 style="font-size:22px;margin-bottom:2px;">Site health report</h1>
+        <p style="color:#6b7280;font-size:14px;margin-top:0;">${esc(data.target)} — generated ${new Date(data.generatedAt).toLocaleString()}</p>
+        <div style="font-size:44px;font-weight:800;margin:20px 0 2px;">${data.healthScore}<span style="font-size:16px;color:#9ca3af;">/100</span></div>
+        <div style="font-size:14px;color:#6b7280;margin-bottom:24px;">${esc(data.healthScoreLabel)} — ${data.summary.critical} critical, ${data.summary.warning} warning, ${data.summary.info} info</div>
+        ${data.findings.length === 0 ? "<p>No issues found.</p>" : groupsHtml}
+      </body></html>`;
+  }
+
+  downloadBtn.addEventListener("click", () => {
+    if (!lastData) return;
+    const html = buildShareableReport(lastData);
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const safeName = lastData.target.replace(/^https?:\/\//, "").replace(/[^a-z0-9.-]/gi, "_");
+    a.href = url;
+    a.download = `sitedoctor-report-${safeName}-${new Date().toISOString().slice(0, 10)}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();

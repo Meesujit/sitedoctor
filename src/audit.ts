@@ -5,6 +5,8 @@ import { extractJsonLd, checkStructuredData, type PageJsonLd } from "./checks/st
 import { checkRedirects } from "./checks/redirects.js";
 import { checkSitemapReliability } from "./checks/sitemap-reliability.js";
 import { checkFavicon } from "./checks/favicon.js";
+import { computeHealthScore } from "./scoring.js";
+import { recordAndGetHistory, type HistoryEntry } from "./history.js";
 import type { Finding } from "./types.js";
 
 export interface AuditOptions {
@@ -22,6 +24,9 @@ export interface AuditResult {
   sitemapsFound: number;
   findings: Finding[];
   warnings: string[];
+  healthScore: number;
+  /** Previous runs for this origin, oldest first, including this run's entry. */
+  history: HistoryEntry[];
 }
 
 const DEFAULTS = { limit: 40, redirectSamples: 4, sitemapAttempts: 5 };
@@ -114,6 +119,19 @@ export async function runAudit(target: string, options: AuditOptions = {}): Prom
     ...faviconFindings
   );
 
+  const healthScore = computeHealthScore(findings);
+  const summary = {
+    critical: findings.filter((f) => f.severity === "critical").length,
+    warning: findings.filter((f) => f.severity === "warning").length,
+    info: findings.filter((f) => f.severity === "info").length,
+  };
+  const history = await recordAndGetHistory(origin, {
+    timestamp: new Date().toISOString(),
+    healthScore,
+    pagesScanned: canonicalInputs.length,
+    summary,
+  });
+
   progress("Done.");
 
   return {
@@ -123,5 +141,7 @@ export async function runAudit(target: string, options: AuditOptions = {}): Prom
     sitemapsFound: sitemapsFound.length,
     findings,
     warnings,
+    healthScore,
+    history,
   };
 }

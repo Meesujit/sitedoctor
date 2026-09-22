@@ -69,7 +69,7 @@ async function main(): Promise<void> {
   });
 
   if (args.json || args.out) {
-    const json = toJson(result.origin, result.findings, result.warnings);
+    const json = toJson(result);
     if (args.out) {
       await writeFile(args.out, json, "utf-8");
       console.error(`Wrote ${args.out}`);
@@ -77,7 +77,7 @@ async function main(): Promise<void> {
       console.log(json);
     }
   } else {
-    printReport(result.origin, result.findings, result.warnings);
+    printReport(result);
   }
 
   const hasCritical = result.findings.some((f) => f.severity === "critical");
