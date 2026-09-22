@@ -60,6 +60,11 @@ export const CHECK_EXPLANATIONS: Record<string, CheckExplanation> = {
     whyItMatters:
       "Links a real visitor would actually click, not just what's listed in the sitemap. A broken internal link is a dead end for both visitors and the search engine crawl path that follows links to discover pages.",
   },
+  "page-changes": {
+    title: "Changes since last scan",
+    whyItMatters:
+      "Most of these are informational, not errors — a title or canonical changing might be a deliberate edit. This is visibility: knowing something changed, so an unexpected one (a page suddenly erroring, or getting marked noindex) gets caught the same day instead of weeks later.",
+  },
 };
 
 export function explainCheck(check: string): CheckExplanation {

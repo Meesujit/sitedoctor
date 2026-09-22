@@ -7,8 +7,10 @@ import { checkSitemapReliability } from "./checks/sitemap-reliability.js";
 import { checkFavicon } from "./checks/favicon.js";
 import { extractMeta, checkMetaTags, type PageMeta } from "./checks/meta-tags.js";
 import { checkImages } from "./checks/images.js";
-import { checkRobotsMeta } from "./checks/robots-meta.js";
+import { checkRobotsMeta, getRobotsDirective } from "./checks/robots-meta.js";
 import { extractInternalLinks, checkBrokenLinks, type PageLinks } from "./checks/links.js";
+import { checkPageChanges, buildSnapshot } from "./checks/page-changes.js";
+import { getPreviousSnapshots, saveSnapshots, type SnapshotMap } from "./page-snapshots.js";
 import { computeHealthScore } from "./scoring.js";
 import { recordAndGetHistory, type HistoryEntry } from "./history.js";
 import { fingerprint, diffCritical, notifyIfChanged } from "./notify.js";
@@ -52,6 +54,9 @@ export async function runAudit(target: string, options: AuditOptions = {}): Prom
   const discovery = await discover(target, limit);
   const { origin, pages, warnings, sitemapsFound } = discovery;
 
+  const previousSnapshots = await getPreviousSnapshots(origin);
+  const currentSnapshots: SnapshotMap = {};
+
   progress(`Found ${pages.length} page(s) across ${sitemapsFound.length || "0 (fallback)"} sitemap(s). Fetching...`);
   const fetched = await Promise.all(pages.map((url) => fetchFollowing(url)));
 
@@ -74,6 +79,9 @@ export async function runAudit(target: string, options: AuditOptions = {}): Prom
         message: res.error ? `Failed to fetch: ${res.error}` : `HTTP ${res.status}`,
         url,
       });
+      // Still snapshot the status even on failure — a page going from 200
+      // to 404 between scans is exactly the kind of change this is for.
+      currentSnapshots[url] = buildSnapshot(res.status, null, null, null, null);
       continue;
     }
 
@@ -89,17 +97,33 @@ export async function runAudit(target: string, options: AuditOptions = {}): Prom
 
     if (!res.body) continue;
 
-    canonicalInputs.push(extractCanonical(res.finalUrl, res.body));
+    const canonicalInfo = extractCanonical(res.finalUrl, res.body);
+    const metaInfo = extractMeta(res.finalUrl, res.body);
+    const robotsDirective = getRobotsDirective(res.body, res);
+
+    canonicalInputs.push(canonicalInfo);
     jsonLdInputs.push(extractJsonLd(res.finalUrl, res.body));
-    metaInputs.push(extractMeta(res.finalUrl, res.body));
+    metaInputs.push(metaInfo);
     linkInputs.push(extractInternalLinks(res.finalUrl, res.body, origin));
     perPageFindings.push(...checkImages(res.finalUrl, res.body));
     perPageFindings.push(...checkRobotsMeta(res.finalUrl, res.body, res));
+
+    currentSnapshots[url] = buildSnapshot(
+      res.status,
+      canonicalInfo.canonical,
+      metaInfo.title,
+      metaInfo.description,
+      robotsDirective
+    );
 
     if (url.replace(/\/$/, "") === origin.replace(/\/$/, "") || url === `${origin}/`) {
       homepageHtml = res.body;
     }
   }
+
+  const pageChangeFindings = checkPageChanges(currentSnapshots, previousSnapshots);
+  findings.push(...pageChangeFindings);
+  await saveSnapshots(origin, currentSnapshots);
 
   progress(
     "Running checks: canonicals, structured data, redirects, sitemap reliability, favicon, meta tags, links..."

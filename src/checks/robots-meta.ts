@@ -4,6 +4,20 @@ import type { FetchResult } from "../http.js";
 
 const BLOCKING_DIRECTIVES = ["noindex", "none"];
 
+/** The combined meta-robots + X-Robots-Tag content for a page, or null if neither is set. */
+export function getRobotsDirective(html: string, res: FetchResult): string | null {
+  const $ = cheerio.load(html);
+  const metaContent = $('meta[name="robots"]').first().attr("content")?.toLowerCase() ?? "";
+  const headerContent = (res.headers.get("x-robots-tag") ?? "").toLowerCase();
+  const combined = [metaContent, headerContent].filter(Boolean).join(" / ");
+  return combined || null;
+}
+
+export function directiveBlocksIndexing(directive: string | null): boolean {
+  if (!directive) return false;
+  return BLOCKING_DIRECTIVES.some((d) => directive.includes(d));
+}
+
 /**
  * A page can be told not to index it two ways: a <meta name="robots"> tag
  * or an X-Robots-Tag response header. Either is often intentional (a

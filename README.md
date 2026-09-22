@@ -38,6 +38,14 @@ None of those show up on a single pass. That's the point.
 - **Broken internal links** — links an actual visitor would click, crawled
   from the pages themselves rather than just the sitemap (capped at 60 new
   links per scan to keep runtime reasonable).
+- **Changes since last scan** — every scan snapshots each page's status,
+  canonical, title, description, and robots directive, then diffs against
+  the last snapshot (stored in `data/snapshots/`, gitignored). Most changes
+  are informational (a title changing isn't inherently wrong), but a page
+  newly erroring or newly getting marked noindex is elevated to a real
+  finding — this is the closest thing here to what enterprise "continuous
+  monitoring" tools charge for, and it flows through the same scoring,
+  history, and Discord alerting as every other check for free.
 
 ## Alerting
 
