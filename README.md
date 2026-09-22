@@ -56,6 +56,45 @@ findings appearing, or the site going fully clean after having had
 critical findings. It won't repost the same standing issues every run;
 that's how alert channels turn into noise nobody reads.
 
+## CI gate
+
+```bash
+sitedoctor <domain> --fail-on new    # exit 1 only on regressions since the last scan
+sitedoctor <domain> --fail-on any    # exit 1 on any critical finding (the default)
+sitedoctor <domain> --fail-on none   # always exit 0 — just report/notify, never fail the build
+```
+
+`--fail-on new` is the right choice for a site that has known,
+pre-existing issues you're not fixing right now — `any` would be
+permanently red and tell a pipeline nothing useful. It works by diffing
+against the previous scan's critical-finding fingerprints (the same
+mechanism Discord alerting uses), so it needs `data/history/` to persist
+between runs — cache it in CI (see `.github/workflows/` in the
+`educollege` repo for a working example).
+
+## AI-generated fix suggestions
+
+Set `ANTHROPIC_API_KEY` in the environment and pass `--suggest-fixes`
+(CLI), or check the "AI fix suggestions" box in the web UI (the server
+must have the env var set — the client can only opt in to using it, never
+supply its own key). Makes one Claude API call per issue *category* that
+has findings, not per individual finding, so a category with 60 broken
+links still costs one call, not 60.
+
+## Search Console traffic correlation
+
+I don't have live API access to Search Console, so this works via CSV
+import instead of a live API integration:
+
+1. In Search Console, open Performance, and export the **Dates** tab as CSV.
+2. `sitedoctor import-traffic <domain> <path-to-csv>`, or use the "Import
+   Search Console data" panel in the web UI.
+3. Future scans of that domain include a clicks/impressions/CTR/position
+   table and sparkline alongside the health score, so a score drop and a
+   traffic drop are visible side by side.
+
+Imported data is stored in `data/traffic/` (gitignored), keyed by domain.
+
 ## Usage
 
 ### CLI

@@ -19,7 +19,7 @@ const SEVERITY_LABEL: Record<Severity, string> = {
 };
 
 export function printReport(result: AuditResult): void {
-  const { origin: target, findings, warnings, healthScore, history } = result;
+  const { origin: target, findings, warnings, healthScore, history, suggestedFixes } = result;
   console.log();
   console.log(pc.bold(`sitedoctor report — ${target}`));
   console.log(pc.dim(new Date().toISOString()));
@@ -63,6 +63,10 @@ export function printReport(result: AuditResult): void {
       if (f.url) console.log(pc.dim(`      ${f.url}`));
       if (f.detail) console.log(pc.dim(`      ${f.detail}`));
     }
+    const suggestion = suggestedFixes?.[check];
+    if (suggestion) {
+      console.log(pc.cyan(`  💡 ${suggestion}`));
+    }
     console.log();
   }
 
@@ -80,7 +84,8 @@ export function printReport(result: AuditResult): void {
 }
 
 export function toJson(result: AuditResult): string {
-  const { origin: target, findings, warnings, healthScore, history, pagesScanned, sitemapsFound } = result;
+  const { origin: target, findings, warnings, healthScore, history, pagesScanned, sitemapsFound, suggestedFixes } =
+    result;
   const byCheck = new Map<string, Finding[]>();
   for (const f of findings) {
     const list = byCheck.get(f.check) ?? [];
@@ -91,6 +96,7 @@ export function toJson(result: AuditResult): string {
     check,
     ...explainCheck(check),
     findings: checkFindings,
+    suggestedFix: suggestedFixes?.[check] ?? null,
   }));
 
   const prev = history.length >= 2 ? history[history.length - 2] : null;

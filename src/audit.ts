@@ -14,6 +14,7 @@ import { getPreviousSnapshots, saveSnapshots, type SnapshotMap } from "./page-sn
 import { computeHealthScore } from "./scoring.js";
 import { recordAndGetHistory, type HistoryEntry } from "./history.js";
 import { fingerprint, diffCritical, notifyIfChanged } from "./notify.js";
+import { suggestFixes } from "./ai-suggestions.js";
 import type { Finding } from "./types.js";
 
 export interface AuditOptions {
@@ -24,6 +25,8 @@ export interface AuditOptions {
   onProgress?: (message: string) => void;
   /** If set, posts to Discord on new critical findings or full recovery — never on every run. */
   discordWebhook?: string;
+  /** If set, asks Claude for one remediation suggestion per issue category that has findings. */
+  anthropicApiKey?: string;
 }
 
 export interface AuditResult {
@@ -36,6 +39,8 @@ export interface AuditResult {
   healthScore: number;
   /** Previous runs for this origin, oldest first, including this run's entry. */
   history: HistoryEntry[];
+  /** check -> suggested fix text, only populated when anthropicApiKey was set. */
+  suggestedFixes: Record<string, string>;
 }
 
 const DEFAULTS = { limit: 40, redirectSamples: 4, sitemapAttempts: 5 };
@@ -197,6 +202,19 @@ export async function runAudit(target: string, options: AuditOptions = {}): Prom
     else if (result.posted) progress("Posted a Discord update (state changed).");
   }
 
+  let suggestedFixes: Record<string, string> = {};
+  if (options.anthropicApiKey && findings.length > 0) {
+    progress("Asking Claude for remediation suggestions...");
+    const byCheck = new Map<string, Finding[]>();
+    for (const f of findings) {
+      const list = byCheck.get(f.check) ?? [];
+      list.push(f);
+      byCheck.set(f.check, list);
+    }
+    const suggestions = await suggestFixes(options.anthropicApiKey, byCheck);
+    suggestedFixes = Object.fromEntries(suggestions);
+  }
+
   progress("Done.");
 
   return {
@@ -208,5 +226,6 @@ export async function runAudit(target: string, options: AuditOptions = {}): Prom
     warnings,
     healthScore,
     history,
+    suggestedFixes,
   };
 }

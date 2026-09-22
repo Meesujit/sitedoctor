@@ -230,6 +230,15 @@
     margin: -2px 0 10px;
     line-height: 1.5;
   }
+  .ai-suggestion {
+    font-size: 13px;
+    color: var(--text);
+    background: var(--info-bg);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin: 0 0 10px;
+    line-height: 1.5;
+  }
   details.tech {
     margin-top: 6px;
   }
@@ -351,6 +360,10 @@
       <label>Sitemap fetch attempts
         <input type="number" id="opt-sitemap" value="5" min="1" max="10" />
       </label>
+      <label style="flex-direction: row; align-items: center; gap: 6px;">
+        <input type="checkbox" id="opt-suggest" style="width: auto;" />
+        AI fix suggestions (calls Claude — needs ANTHROPIC_API_KEY set on the server)
+      </label>
     </div>
   </details>
 
@@ -372,6 +385,22 @@
     <div class="stat warning"><div class="n" id="n-warning">0</div><div class="label">Warning</div></div>
     <div class="stat info"><div class="n" id="n-info">0</div><div class="label">Info</div></div>
   </div>
+
+  <div id="traffic-section" style="display:none;">
+    <h2 style="font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border);">Search Console traffic</h2>
+    <div id="traffic-content"></div>
+  </div>
+
+  <details class="options" id="traffic-import">
+    <summary>Import Search Console data</summary>
+    <div class="opt-row" style="align-items:center;">
+      <label style="flex:1;">Performance report CSV (the "Dates" tab export)
+        <input type="file" id="traffic-file" accept=".csv" style="margin-top:4px;" />
+      </label>
+      <button type="button" id="traffic-import-btn" style="align-self:flex-end;">Import</button>
+    </div>
+    <div id="traffic-import-status" style="font-size:12px;color:var(--text-muted);margin-top:8px;"></div>
+  </details>
 
   <div id="meta"></div>
   <div class="notes" id="notes"></div>
@@ -454,6 +483,68 @@
     </svg>`;
   }
 
+  function lineSparkline(values, color) {
+    if (values.length < 2) return "";
+    const w = 260, h = 48, pad = 4;
+    const min = Math.min(...values), max = Math.max(...values);
+    const range = max - min || 1;
+    const pts = values.map((v, i) => {
+      const x = pad + (i / (values.length - 1)) * (w - pad * 2);
+      const y = h - pad - ((v - min) / range) * (h - pad * 2);
+      return [x, y];
+    });
+    const path = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+      <path d="${path}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>`;
+  }
+
+  function renderTraffic(traffic, healthHistory) {
+    const section = document.getElementById("traffic-section");
+    const content = document.getElementById("traffic-content");
+    if (!traffic || traffic.length === 0) {
+      section.style.display = "none";
+      return;
+    }
+    section.style.display = "block";
+
+    const recent = traffic.slice(-30);
+    const clicksSpark = lineSparkline(recent.map((p) => p.clicks), "var(--accent)");
+    const last10 = traffic.slice(-10).reverse();
+
+    const rows = last10
+      .map(
+        (p) => `
+        <tr>
+          <td style="padding:4px 8px 4px 0;color:var(--text-muted);">${esc(p.date)}</td>
+          <td style="padding:4px 8px;text-align:right;">${p.clicks}</td>
+          <td style="padding:4px 8px;text-align:right;">${p.impressions}</td>
+          <td style="padding:4px 8px;text-align:right;">${(p.ctr * 100).toFixed(1)}%</td>
+          <td style="padding:4px 0 4px 8px;text-align:right;">${p.position ? p.position.toFixed(1) : "—"}</td>
+        </tr>`
+      )
+      .join("");
+
+    const firstDate = traffic[0].date;
+    const lastDate = traffic[traffic.length - 1].date;
+
+    content.innerHTML = `
+      <div style="font-size:12px;color:var(--text-faint);margin-bottom:10px;">${traffic.length} day(s) imported, ${esc(firstDate)} to ${esc(lastDate)}. Clicks, last 30 imported days:</div>
+      ${clicksSpark}
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:14px;">
+        <thead>
+          <tr style="color:var(--text-muted);font-size:11px;text-transform:uppercase;">
+            <th style="text-align:left;padding:4px 8px 4px 0;">Date</th>
+            <th style="text-align:right;padding:4px 8px;">Clicks</th>
+            <th style="text-align:right;padding:4px 8px;">Impr.</th>
+            <th style="text-align:right;padding:4px 8px;">CTR</th>
+            <th style="text-align:right;padding:4px 0 4px 8px;">Pos.</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
   function findingsHtml(findings) {
     const sorted = [...findings].sort(
       (a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity)
@@ -494,6 +585,7 @@
       deltaEl.className = up ? "up" : "down";
     }
     document.getElementById("sparkline").innerHTML = sparklineSvg(data.history || []);
+    renderTraffic(data.traffic, data.history);
 
     summaryEl.classList.add("show");
     document.getElementById("n-critical").textContent = data.summary.critical;
@@ -519,6 +611,7 @@
       group.innerHTML = `
         <h2>${esc(g.title)}</h2>
         ${g.whyItMatters ? `<div class="why-it-matters">${esc(g.whyItMatters)}</div>` : ""}
+        ${g.suggestedFix ? `<div class="ai-suggestion">💡 ${esc(g.suggestedFix)}</div>` : ""}
         <details class="tech">
           <summary>Technical details (${g.findings.length})</summary>
           ${findingsHtml(g.findings)}
@@ -534,6 +627,7 @@
         <section class="grp">
           <h2>${esc(g.title)} (${g.findings.length})</h2>
           <p class="why">${esc(g.whyItMatters)}</p>
+          ${g.suggestedFix ? `<p class="suggestion">💡 ${esc(g.suggestedFix)}</p>` : ""}
           ${g.findings
             .map(
               (f) => `
@@ -586,6 +680,7 @@
   .grp { margin-bottom: 28px; }
   .grp h2 { font-size: 16px; margin: 0 0 6px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
   .why { color: var(--text-muted); font-size: 14px; margin: 0 0 12px; }
+  .suggestion { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin: 0 0 12px; }
   .f { padding: 8px 0; border-bottom: 1px solid var(--border); }
   .sev { text-transform: uppercase; font-size: 11px; }
   .sev.critical { color: var(--critical); }
@@ -646,6 +741,37 @@
     URL.revokeObjectURL(url);
   });
 
+  document.getElementById("traffic-import-btn").addEventListener("click", async () => {
+    const fileInput = document.getElementById("traffic-file");
+    const statusEl2 = document.getElementById("traffic-import-status");
+    const domain = domainInput.value.trim();
+
+    if (!domain) {
+      statusEl2.textContent = "Type a domain above first — the import is tied to that site.";
+      return;
+    }
+    const file = fileInput.files[0];
+    if (!file) {
+      statusEl2.textContent = "Choose a CSV file first.";
+      return;
+    }
+
+    statusEl2.textContent = "Importing...";
+    try {
+      const csv = await file.text();
+      const res = await fetch("/api/import-traffic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domain, csv }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      statusEl2.textContent = `Imported ${data.imported} day(s), ${data.from} to ${data.to}. Rescan to see it.`;
+    } catch (err) {
+      statusEl2.textContent = "Import failed: " + (err.message || String(err));
+    }
+  });
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const domain = domainInput.value.trim();
@@ -669,6 +795,7 @@
           limit: Number(document.getElementById("opt-limit").value) || undefined,
           redirectSamples: Number(document.getElementById("opt-redirect").value) || undefined,
           sitemapAttempts: Number(document.getElementById("opt-sitemap").value) || undefined,
+          suggestFixes: document.getElementById("opt-suggest").checked,
         }),
       });
       const data = await res.json();
