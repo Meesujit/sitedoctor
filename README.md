@@ -30,12 +30,26 @@ None of those show up on a single pass. That's the point.
 
 ## Usage
 
+### CLI
+
 ```bash
 npm install
 npm run dev -- example.com
 ```
 
-Flags:
+### Web UI
+
+```bash
+npm run serve            # http://localhost:4321
+npm run serve -- --port 5000
+```
+
+A single local page: type a domain, hit Scan, see the same findings the CLI
+reports laid out with severity badges instead of terminal colors. No
+external requests except the ones the scan itself makes to the target site —
+no analytics, no CDN, nothing phoned home.
+
+### CLI flags
 
 - `--limit <n>` — cap how many sitemap pages to check (default 40)
 - `--redirect-samples <n>` — how many paths to sample for the redirect check (default 4)

@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>sitedoctor</title>
+<style>
+  :root {
+    --bg: #f7f7f8;
+    --surface: #ffffff;
+    --border: #e4e4e7;
+    --text: #18181b;
+    --text-muted: #6b7280;
+    --text-faint: #9ca3af;
+    --critical: #dc2626;
+    --critical-bg: #fef2f2;
+    --warning: #b45309;
+    --warning-bg: #fffbeb;
+    --info: #2563eb;
+    --info-bg: #eff6ff;
+    --accent: #4f46e5;
+    --accent-hover: #4338ca;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0b0d;
+      --surface: #17171a;
+      --border: #2a2a2e;
+      --text: #f4f4f5;
+      --text-muted: #a1a1aa;
+      --text-faint: #71717a;
+      --critical: #f87171;
+      --critical-bg: #2a1414;
+      --warning: #fbbf24;
+      --warning-bg: #2a2211;
+      --info: #60a5fa;
+      --info-bg: #12213a;
+      --accent: #818cf8;
+      --accent-hover: #a5b4fc;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+  }
+  main {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 48px 20px 80px;
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+  }
+  .tagline {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin: 0 0 28px;
+  }
+  form {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  input[type="text"] {
+    flex: 1;
+    min-width: 0;
+    padding: 11px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 14px;
+  }
+  input[type="text"]:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+  }
+  button {
+    padding: 11px 18px;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: var(--accent-hover); }
+  button:disabled { opacity: 0.6; cursor: default; }
+
+  details.options {
+    margin-bottom: 28px;
+  }
+  details.options summary {
+    font-size: 13px;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+  }
+  .opt-row {
+    display: flex;
+    gap: 16px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+  .opt-row label {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .opt-row input[type="number"] {
+    width: 72px;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+  }
+
+  #status {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin: 12px 0;
+    min-height: 18px;
+  }
+
+  #summary {
+    display: none;
+    gap: 10px;
+    margin: 24px 0;
+  }
+  #summary.show { display: flex; }
+  .stat {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    background: var(--surface);
+  }
+  .stat .n { font-size: 24px; font-weight: 700; line-height: 1; }
+  .stat .label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+  .stat.critical .n { color: var(--critical); }
+  .stat.warning .n { color: var(--warning); }
+  .stat.info .n { color: var(--info); }
+
+  #meta {
+    font-size: 12px;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+  }
+
+  .notes {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+  }
+  .notes div { margin-bottom: 2px; }
+
+  .group {
+    margin-bottom: 22px;
+  }
+  .group h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin: 0 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .finding {
+    display: flex;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .finding:last-child { border-bottom: none; }
+  .badge {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    padding: 3px 7px;
+    border-radius: 5px;
+    height: fit-content;
+    white-space: nowrap;
+  }
+  .badge.critical { color: var(--critical); background: var(--critical-bg); }
+  .badge.warning { color: var(--warning); background: var(--warning-bg); }
+  .badge.info { color: var(--info); background: var(--info-bg); }
+  .finding-body { min-width: 0; }
+  .finding-msg { font-size: 14px; }
+  .finding-url, .finding-detail {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-faint);
+    margin-top: 3px;
+    word-break: break-all;
+  }
+
+  #empty {
+    display: none;
+    text-align: center;
+    padding: 40px 0;
+    color: var(--text-muted);
+  }
+  #empty.show { display: block; }
+
+  #error {
+    display: none;
+    background: var(--critical-bg);
+    color: var(--critical);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    margin: 16px 0;
+  }
+  #error.show { display: block; }
+</style>
+</head>
+<body>
+<main>
+  <h1>sitedoctor</h1>
+  <p class="tagline">Catches the site-health bugs a single-pass SEO crawler misses.</p>
+
+  <form id="scan-form">
+    <input type="text" id="domain" placeholder="example.com" autocomplete="off" autofocus />
+    <button type="submit" id="scan-btn">Scan</button>
+  </form>
+
+  <details class="options">
+    <summary>Options</summary>
+    <div class="opt-row">
+      <label>Page limit
+        <input type="number" id="opt-limit" value="40" min="1" max="500" />
+      </label>
+      <label>Redirect samples
+        <input type="number" id="opt-redirect" value="4" min="1" max="20" />
+      </label>
+      <label>Sitemap fetch attempts
+        <input type="number" id="opt-sitemap" value="5" min="1" max="10" />
+      </label>
+    </div>
+  </details>
+
+  <div id="status"></div>
+  <div id="error"></div>
+
+  <div id="summary">
+    <div class="stat critical"><div class="n" id="n-critical">0</div><div class="label">Critical</div></div>
+    <div class="stat warning"><div class="n" id="n-warning">0</div><div class="label">Warning</div></div>
+    <div class="stat info"><div class="n" id="n-info">0</div><div class="label">Info</div></div>
+  </div>
+
+  <div id="meta"></div>
+  <div class="notes" id="notes"></div>
+  <div id="empty">No issues found. 🎉</div>
+  <div id="results"></div>
+</main>
+
+<script>
+  const form = document.getElementById("scan-form");
+  const domainInput = document.getElementById("domain");
+  const scanBtn = document.getElementById("scan-btn");
+  const statusEl = document.getElementById("status");
+  const errorEl = document.getElementById("error");
+  const summaryEl = document.getElementById("summary");
+  const metaEl = document.getElementById("meta");
+  const notesEl = document.getElementById("notes");
+  const emptyEl = document.getElementById("empty");
+  const resultsEl = document.getElementById("results");
+
+  const SEVERITY_ORDER = ["critical", "warning", "info"];
+
+  function esc(s) {
+    return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+  }
+
+  function render(data) {
+    summaryEl.classList.add("show");
+    document.getElementById("n-critical").textContent = data.summary.critical;
+    document.getElementById("n-warning").textContent = data.summary.warning;
+    document.getElementById("n-info").textContent = data.summary.info;
+
+    metaEl.textContent = `${data.target} — scanned ${new Date(data.generatedAt).toLocaleString()}`;
+
+    notesEl.innerHTML = (data.warnings || [])
+      .map((w) => `<div>note: ${esc(w)}</div>`)
+      .join("");
+
+    resultsEl.innerHTML = "";
+    if (data.findings.length === 0) {
+      emptyEl.classList.add("show");
+      return;
+    }
+    emptyEl.classList.remove("show");
+
+    const byCheck = new Map();
+    for (const f of data.findings) {
+      if (!byCheck.has(f.check)) byCheck.set(f.check, []);
+      byCheck.get(f.check).push(f);
+    }
+
+    for (const [check, findings] of byCheck) {
+      findings.sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity));
+      const group = document.createElement("div");
+      group.className = "group";
+      group.innerHTML = `<h2>${esc(check)}</h2>`;
+      for (const f of findings) {
+        const row = document.createElement("div");
+        row.className = "finding";
+        row.innerHTML = `
+          <span class="badge ${f.severity}">${f.severity}</span>
+          <div class="finding-body">
+            <div class="finding-msg">${esc(f.message)}</div>
+            ${f.url ? `<div class="finding-url">${esc(f.url)}</div>` : ""}
+            ${f.detail ? `<div class="finding-detail">${esc(f.detail)}</div>` : ""}
+          </div>`;
+        group.appendChild(row);
+      }
+      resultsEl.appendChild(group);
+    }
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const domain = domainInput.value.trim();
+    if (!domain) return;
+
+    scanBtn.disabled = true;
+    errorEl.classList.remove("show");
+    summaryEl.classList.remove("show");
+    emptyEl.classList.remove("show");
+    resultsEl.innerHTML = "";
+    metaEl.textContent = "";
+    notesEl.innerHTML = "";
+    statusEl.textContent = "Scanning — this takes a bit, it's making real requests to the site...";
+
+    try {
+      const res = await fetch("/api/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          domain,
+          limit: Number(document.getElementById("opt-limit").value) || undefined,
+          redirectSamples: Number(document.getElementById("opt-redirect").value) || undefined,
+          sitemapAttempts: Number(document.getElementById("opt-sitemap").value) || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      statusEl.textContent = "";
+      render(data);
+    } catch (err) {
+      statusEl.textContent = "";
+      errorEl.textContent = err.message || String(err);
+      errorEl.classList.add("show");
+    } finally {
+      scanBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
